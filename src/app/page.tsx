@@ -3,25 +3,29 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Send } from "lucide-react";
 
+// Tipagens
 type Role = "you" | "agent" | "system";
 type ChatMsg = { id: string; from: Role; text: string; ts: number };
 
-function randomWamId() {
+// Helpers
+function randomWamId(): string {
   const rand = Math.random().toString(36).slice(2, 10);
   return `wamid.${Date.now()}.${rand}`;
 }
 
-function formatTime(ts = Date.now()) {
+function formatTime(ts: number = Date.now()): string {
   const d = new Date(ts);
   return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }
 
 export default function App() {
-  const [phoneId, setPhoneId] = useState("5585982389724");
-  const [webhook, setWebhook] = useState<string>("https://app-n8n.ucspdi.easypanel.host/webhook/fb6269a0-fe15-4805-b3d1-8c01b2b6e9a4?teste=true"); // opcional: use só em dev
-  const [extraHeaders, setExtraHeaders] = useState<string>("{}"); // {"Authorization":"Bearer ..."}
-  const [input, setInput] = useState("");
-  const [isSending, setIsSending] = useState(false);
+  const [phoneId, setPhoneId] = useState<string>("5585982389724");
+  // Em produção, a URL do webhook deve ser tratada no server (rota /api/webhook-relay) para evitar CORS.
+  const [webhook, setWebhook] = useState<string>(
+    "https://app-n8n.ucspdi.easypanel.host/webhook/fb6269a0-fe15-4805-b3d1-8c01b2b6e9a4?teste=true"
+  );
+  const [input, setInput] = useState<string>("");
+  const [isSending, setIsSending] = useState<boolean>(false);
   const [history, setHistory] = useState<ChatMsg[]>([
     {
       id: randomWamId(),
@@ -38,36 +42,18 @@ export default function App() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [history]);
 
-  async function sendMessage() {
+  async function sendMessage(): Promise<void> {
     if (!input.trim() || isSending) return;
 
-    // (Opcional) valida JSON de headers extras
-    let headersExtra: Record<string, string> = {};
-    try {
-      const parsed = JSON.parse(extraHeaders || "{}");
-      if (parsed && typeof parsed === "object") headersExtra = parsed;
-    } catch {
-      setHistory((h) => [
-        ...h,
-        {
-          id: randomWamId(),
-          from: "system",
-          text:
-            "Headers extras inválidos (não é JSON). Ajuste o campo ou deixe vazio. Enviando sem headers extras.",
-          ts: Date.now(),
-        },
-      ]);
-    }
+    const userText: string = input.trim();
+    const wamId: string = randomWamId();
 
-    const userText = input.trim();
-    const wamId = randomWamId();
-
-    // Mostra a mensagem do usuário
+    // Append da mensagem do usuário
     setHistory((h) => [...h, { id: wamId, from: "you", text: userText, ts: Date.now() }]);
     setInput("");
     setIsSending(true);
 
-    // Payload no formato que você já usa
+    // Payload no formato Evolution minimal
     const payload = {
       messages: [
         {
@@ -83,19 +69,17 @@ export default function App() {
     };
 
     try {
-      // Chama a rota server-side (sem CORS no servidor)
+      // Rota server-side (proxy) que repassa ao webhook real sem headers extras
       const res = await fetch("/api/webhook-relay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           payload,
-          webhook: webhook || undefined, // em produção, remova e use ENV no server
-          extraHeaders: Object.keys(headersExtra).length ? headersExtra : undefined,
+          webhook: webhook || undefined, // Em produção, prefira usar ENV no server
         }),
       });
 
-      // Lê a resposta do servidor proxy (que repassa o retorno do webhook)
-      const contentType = res.headers.get("content-type") || "";
+      const contentType = res.headers.get("content-type") ?? "";
       const raw = await res.text();
 
       if (!res.ok) {
@@ -111,36 +95,39 @@ export default function App() {
         return;
       }
 
-      // Tenta interpretar JSON (se a API do webhook responder em JSON), senão mostra texto puro
-      let replyText = raw;
+      let replyText: string = raw;
       if (contentType.includes("application/json")) {
         try {
-          const parsed = JSON.parse(raw);
-          if (parsed?.messages?.[0]?.text?.body) {
-            replyText = parsed.messages[0].text.body;
-          } else if (parsed?.message) {
-            replyText = parsed.message;
-          } else {
-            replyText = JSON.stringify(parsed, null, 2);
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+          const parsed: unknown = JSON.parse(raw);
+          if (typeof parsed === "object" && parsed !== null) {
+            const p = parsed as Record<string, unknown>;
+            const messages = p["messages"] as unknown;
+            if (Array.isArray(messages) && messages[0] && typeof messages[0] === "object") {
+              const first = messages[0] as Record<string, unknown>;
+              const text = first["text"] as Record<string, unknown> | undefined;
+              const body = text?.["body"];
+              if (typeof body === "string") replyText = body;
+            } else if (typeof p["message"] === "string") {
+              replyText = p["message"] as string;
+            } else {
+              replyText = JSON.stringify(parsed, null, 2);
+            }
           }
         } catch {
-          // mantém texto
+          // mantém texto bruto
         }
       }
 
       setHistory((h) => [
         ...h,
-        { id: randomWamId(), from: "agent", text: replyText, ts: Date.now() },
+        { id: randomWamId(), from: "agent", text: replyText || "(sem resposta)", ts: Date.now() },
       ]);
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
       setHistory((h) => [
         ...h,
-        {
-          id: randomWamId(),
-          from: "system",
-          text: `Falha no relay: ${String(err?.message || err)}`,
-          ts: Date.now(),
-        },
+        { id: randomWamId(), from: "system", text: `Falha no relay: ${msg}`, ts: Date.now() },
       ]);
     } finally {
       setIsSending(false);
@@ -149,22 +136,22 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-[#e5ddd5] flex flex-col">
-      {/* Header fixo */}
-      {/* <header className="bg-[#075E54] text-white px-4 py-3 flex items-center gap-2 fixed top-0 left-0 right-0 z-50">
+      {/* Header (opcional) */}
+      <header className="bg-[#075E54] text-white px-4 py-3 flex items-center gap-2 fixed top-0 left-0 right-0 z-50">
         <span className="font-semibold">Número:</span>
         <input
           className="rounded px-2 py-1 text-white text-sm border border-white/30 bg-transparent"
           value={phoneId}
-          onChange={(e) => setPhoneId(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setPhoneId(e.target.value)}
         />
         <span className="font-semibold">Webhook (dev):</span>
         <input
           className="rounded px-2 py-1 text-white text-sm border border-white/30 bg-transparent w-[26rem] max-w-[40vw]"
           value={webhook}
-          onChange={(e) => setWebhook(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWebhook(e.target.value)}
           placeholder="https://seu-webhook (deixe vazio se usar ENV no servidor)"
         />
-      </header> */}
+      </header>
 
       {/* Corpo do chat */}
       <main className="flex-1 overflow-y-auto p-4 space-y-3 pt-24 pb-40">
@@ -180,8 +167,7 @@ export default function App() {
               }`}
             >
               <div className="text-[10px] opacity-60 mb-1">
-                {m.from === "you" ? "Você" : m.from === "agent" ? "Chatbot" : "Sistema"} ·{" "}
-                {formatTime(m.ts)}
+                {m.from === "you" ? "Você" : m.from === "agent" ? "Chatbot" : "Sistema"} · {formatTime(m.ts)}
               </div>
               <div>{m.text}</div>
             </div>
@@ -195,17 +181,17 @@ export default function App() {
         <input
           className="flex-1 rounded-full border px-4 py-2 text-sm"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e: React.ChangeEvent<HTMLInputElement>) => setInput(e.target.value)}
           placeholder="Digite uma mensagem"
-          onKeyDown={(e) => {
+          onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
             if (e.key === "Enter") {
               e.preventDefault();
-              sendMessage();
+              void sendMessage();
             }
           }}
         />
         <button
-          onClick={sendMessage}
+          onClick={() => void sendMessage()}
           disabled={!input.trim() || isSending}
           className="bg-[#25D366] text-white rounded-full p-3 disabled:opacity-50"
           aria-label="Enviar"
@@ -214,8 +200,6 @@ export default function App() {
           <Send className="w-4 h-4" />
         </button>
       </footer>
-
-     
     </div>
   );
 }
