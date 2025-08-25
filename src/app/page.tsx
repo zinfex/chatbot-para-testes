@@ -137,7 +137,7 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#e5ddd5] flex flex-col">
       {/* Header (opcional) */}
-      <header className="bg-[#075E54] text-white px-4 py-3 flex items-center gap-2 fixed top-0 left-0 right-0 z-50">
+      {/* <header className="bg-[#075E54] text-white px-4 py-3 flex items-center gap-2 fixed top-0 left-0 right-0 z-50">
         <span className="font-semibold">Número:</span>
         <input
           className="rounded px-2 py-1 text-white text-sm border border-white/30 bg-transparent"
@@ -151,7 +151,7 @@ export default function App() {
           onChange={(e: React.ChangeEvent<HTMLInputElement>) => setWebhook(e.target.value)}
           placeholder="https://seu-webhook (deixe vazio se usar ENV no servidor)"
         />
-      </header>
+      </header> */}
 
       {/* Corpo do chat */}
       <main className="flex-1 overflow-y-auto p-4 space-y-3 pt-24 pb-40">
