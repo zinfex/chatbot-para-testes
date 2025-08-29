@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 // Webhook padrão via ENV (produção)
-const DEFAULT_WEBHOOK = process.env.WEBHOOK_URL || "";
+const DEFAULT_WEBHOOK = process.env.WEBHOOK_URL || "https://bvh-n8n.oviiko.easypanel.host/webhook/chatbot-bvh?teste=true";
 
 // Tipos do body aceito
 interface RelayBody {

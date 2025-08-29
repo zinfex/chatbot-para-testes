@@ -19,10 +19,10 @@ function formatTime(ts: number = Date.now()): string {
 }
 
 export default function App() {
-  const [phoneId, setPhoneId] = useState<string>("5585982389724");
+  const [phoneId, setPhoneId] = useState<string>("5585982376724");
   // Em produção, a URL do webhook deve ser tratada no server (rota /api/webhook-relay) para evitar CORS.
   const [webhook, setWebhook] = useState<string>(
-    "https://app-n8n.ucspdi.easypanel.host/webhook/fb6269a0-fe15-4805-b3d1-8c01b2b6e9a4?teste=true"
+    "https://bvh-n8n.oviiko.easypanel.host/webhook/chatbot-bvh?teste=true"
   );
   const [input, setInput] = useState<string>("");
   const [isSending, setIsSending] = useState<boolean>(false);
@@ -31,7 +31,15 @@ export default function App() {
       id: randomWamId(),
       from: "agent",
       text:
-        "Olá, aqui é da Brasil Visa Hub. Ajudamos investidores e famílias a estruturarem residência e negócios no Brasil com segurança e confidencialidade. Você tem interesse em morar, investir ou abrir empresa no Brasil?",
+        `Olá, meu nome é David, fundador e CEO da Brazil Visa Hub.
+
+Somos uma consultoria estratégica que apoia empreendedores e profissionais de sucesso em mobilidade global, expansão de negócios e investimentos internacionais.
+
+Observamos que os líderes globais de hoje estão priorizando três objetivos principais. Para garantir que minha mensagem seja relevante, posso perguntar qual desses está mais alinhado com seu foco atual?
+
+Mobilidade Pessoal – nova residência, cidadania ou mudança de estilo de vida
+Expansão de Negócios – entrada em novos mercados como EUA, Europa ou Ásia
+Diversificação de Riquezas – investimentos internacionais e proteção de ativos`,
       ts: Date.now(),
     },
   ]);
@@ -44,84 +52,92 @@ export default function App() {
 
   async function sendMessage(): Promise<void> {
     if (!input.trim() || isSending) return;
-
+  
     const userText: string = input.trim();
     const wamId: string = randomWamId();
-
-    // Append da mensagem do usuário
-    setHistory((h) => [...h, { id: wamId, from: "you", text: userText, ts: Date.now() }]);
+  
+    // Append no histórico
+    setHistory((h) => [
+      ...h,
+      { id: wamId, from: "you", text: userText, ts: Date.now() },
+    ]);
     setInput("");
     setIsSending(true);
-
-    // Payload no formato Evolution minimal
-    const payload = {
-      messages: [
-        {
-          id: wamId,
-          type: "text",
-          timestamp: String(Math.floor(Date.now() / 1000)),
-          text: { body: userText },
-        },
-      ],
-      metadata: {
-        phone_number_id: phoneId,
-      },
-    };
-
+  
+  
     try {
-      // Rota server-side (proxy) que repassa ao webhook real sem headers extras
+      const evolutionPayload = {
+        event: "messages.upsert",
+        instance: "teste",
+        data: {
+          key: {
+            remoteJid: `${phoneId}@s.whatsapp.net`,
+            fromMe: false,
+            id: wamId,
+          },
+          pushName: "Arthur",
+          status: "DELIVERY_ACK",
+          message: {
+            conversation: userText,
+            messageContextInfo: {
+              deviceListMetadata: {
+                senderKeyHash: "abc123==",
+                senderTimestamp: String(Math.floor(Date.now() / 1000)),
+                recipientKeyHash: "def456==",
+                recipientTimestamp: String(Math.floor(Date.now() / 1000) + 100),
+              },
+              deviceListMetadataVersion: 2,
+              messageSecret: "fakeSecret==",
+            },
+          },
+          messageType: "conversation",
+          messageTimestamp: Math.floor(Date.now() / 1000),
+          instanceId: "55cb4766-bad8-4637-bc2d-0d0706f3d745",
+          source: "android",
+        },
+        destination: webhook,
+        date_time: new Date().toISOString(),
+        sender: `${phoneId}@s.whatsapp.net`,
+        server_url: "https://bvh-evolution-api.oviiko.easypanel.host",
+        apikey: "7E3A31243877-46FC-9453-E7F75368EB79",
+      };
+      
       const res = await fetch("/api/webhook-relay", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          payload,
-          webhook: webhook || undefined, // Em produção, prefira usar ENV no server
+          payload: evolutionPayload,
+          webhook: webhook || undefined,
         }),
       });
-
-      const contentType = res.headers.get("content-type") ?? "";
+      
+      
       const raw = await res.text();
-
       if (!res.ok) {
         setHistory((h) => [
           ...h,
           {
             id: randomWamId(),
             from: "system",
-            text: `Erro do webhook (HTTP ${res.status}). Resposta: ${raw.slice(0, 1200)}`,
+            text: `Erro do webhook (HTTP ${res.status}). Resposta: ${raw.slice(
+              0,
+              1200
+            )}`,
             ts: Date.now(),
           },
         ]);
         return;
       }
-
-      let replyText: string = raw;
-      if (contentType.includes("application/json")) {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          const parsed: unknown = JSON.parse(raw);
-          if (typeof parsed === "object" && parsed !== null) {
-            const p = parsed as Record<string, unknown>;
-            const messages = p["messages"] as unknown;
-            if (Array.isArray(messages) && messages[0] && typeof messages[0] === "object") {
-              const first = messages[0] as Record<string, unknown>;
-              const text = first["text"] as Record<string, unknown> | undefined;
-              const body = text?.["body"];
-              if (typeof body === "string") replyText = body;
-            } else if (typeof p["message"] === "string") {
-              replyText = p["message"] as string;
-            } else {
-              replyText = JSON.stringify(parsed, null, 2);
-            }
-          }
-        } catch {
-          // mantém texto bruto
-        }
-      }
-
+  
+      // Se o seu webhook retorna resposta em texto
       setHistory((h) => [
         ...h,
-        { id: randomWamId(), from: "agent", text: replyText || "(sem resposta)", ts: Date.now() },
+        {
+          id: randomWamId(),
+          from: "agent",
+          text: raw || "(sem resposta)",
+          ts: Date.now(),
+        },
       ]);
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -133,6 +149,7 @@ export default function App() {
       setIsSending(false);
     }
   }
+  
 
   return (
     <div className="min-h-screen bg-[#e5ddd5] flex flex-col">
