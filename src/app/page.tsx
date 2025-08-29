@@ -37,9 +37,11 @@ Somos uma consultoria estratégica que apoia empreendedores e profissionais de s
 
 Observamos que os líderes globais de hoje estão priorizando três objetivos principais. Para garantir que minha mensagem seja relevante, posso perguntar qual desses está mais alinhado com seu foco atual?
 
-Mobilidade Pessoal – nova residência, cidadania ou mudança de estilo de vida
-Expansão de Negócios – entrada em novos mercados como EUA, Europa ou Ásia
-Diversificação de Riquezas – investimentos internacionais e proteção de ativos`,
+1️⃣ Mobilidade Pessoal – nova residência, cidadania ou mudança de estilo de vida
+2️⃣ Expansão de Negócios – entrada em novos mercados como EUA, Europa ou Ásia
+3️⃣ Gestão de Investimentos – investimentos internacionais e proteção de ativos
+
+Uma resposta apenas com o número seria perfeita.`,
       ts: Date.now(),
     },
   ]);
